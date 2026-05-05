@@ -1,0 +1,59 @@
+name: 'OpenTofu Destroy'
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type "destroy" to confirm resource deletion'
+        required: true
+
+env:
+  TF_VERSION: '1.6.0'
+  AWS_REGION: 'us-east-1'
+
+jobs:
+  destroy:
+    name: 'Terraform Destroy'
+    runs-on: ubuntu-latest
+    if: github.event.inputs.confirm == 'destroy'
+    environment:
+      name: production
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup OpenTofu
+        uses: opentofu/setup-opentofu@v1
+        with:
+          tofu_version: ${{ env.TF_VERSION }}
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Create terraform.tfvars
+        run: |
+          cat > terraform.tfvars <<EOF
+          student_id = "${{ secrets.STUDENT_ID }}"
+          project_name = "ticket-classifier"
+          aws_region = "${{ env.AWS_REGION }}"
+          EOF
+
+      - name: Terraform Init
+        run: |
+          tofu init \
+            -backend-config="bucket=ticket-classifier-${{ secrets.STUDENT_ID }}-tfstate" \
+            -backend-config="key=ticket-classifier/terraform.tfstate" \
+            -backend-config="region=${{ env.AWS_REGION }}"
+
+      - name: Terraform Destroy
+        run: tofu destroy -auto-approve
+
+      - name: Summary
+        run: |
+          echo "## Destroy Complete" >> $GITHUB_STEP_SUMMARY
+          echo "All ticket-classifier resources have been removed from AWS." >> $GITHUB_STEP_SUMMARY
