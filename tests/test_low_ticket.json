@@ -1,0 +1,6 @@
+{
+  "ticket_id": "tk-003",
+  "customer": "user@example.com",
+  "priority_score": 15,
+  "description": "I have a question about the documentation. Could you clarify the section about API rate limits?"
+}

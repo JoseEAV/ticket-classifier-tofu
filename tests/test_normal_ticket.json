@@ -1,0 +1,6 @@
+{
+  "ticket_id": "tk-002",
+  "customer": "developer@company.com",
+  "priority_score": 50,
+  "description": "I would like to request a new feature for the dashboard. It would be great to have export functionality."
+}
