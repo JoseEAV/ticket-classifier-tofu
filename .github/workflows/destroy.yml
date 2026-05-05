@@ -53,7 +53,13 @@ jobs:
       - name: Terraform Destroy
         run: tofu destroy -auto-approve
 
+      - name: Remove State File
+        run: |
+          aws s3 rm s3://ticket-classifier-${{ secrets.STUDENT_ID }}-tfstate/ticket-classifier/terraform.tfstate 2>/dev/null || true
+          echo "State file removed from S3."
+
       - name: Summary
         run: |
           echo "## Destroy Complete" >> $GITHUB_STEP_SUMMARY
           echo "All ticket-classifier resources have been removed from AWS." >> $GITHUB_STEP_SUMMARY
+          echo "State file cleared — next apply will start fresh." >> $GITHUB_STEP_SUMMARY
