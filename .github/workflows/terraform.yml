@@ -162,70 +162,84 @@ jobs:
             -backend-config="key=ticket-classifier/terraform.tfstate" \
             -backend-config="region=${{ env.AWS_REGION }}"
 
-      - name: Cleanup Orphaned Resources (if no state)
+      - name: Import Existing Resources into State
         run: |
-          STATE_KEY="ticket-classifier/terraform.tfstate"
-          STATE_BUCKET="ticket-classifier-${{ secrets.STUDENT_ID }}-tfstate"
           NAME="ticket-classifier-${{ secrets.STUDENT_ID }}"
+          BASIC_EXEC="arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
 
-          # Solo limpiar si el archivo de estado no existe o está vacío
-          STATE_SIZE=$(aws s3api head-object --bucket "$STATE_BUCKET" --key "$STATE_KEY" \
-            --query ContentLength --output text 2>/dev/null || echo "0")
+          echo "Importing any existing AWS resources into Terraform state..."
 
-          if [ "$STATE_SIZE" = "0" ] || [ "$STATE_SIZE" = "None" ] || [ -z "$STATE_SIZE" ]; then
-            echo "No state file found — cleaning up any orphaned AWS resources..."
+          # IAM: lambda role
+          aws iam get-role --role-name "${NAME}-lambda-role" > /dev/null 2>&1 && \
+            tofu import aws_iam_role.lambda_role "${NAME}-lambda-role" 2>/dev/null || true
 
-            # Lambda functions
-            for fn in validate-ticket classify-ticket route-ticket; do
-              aws lambda delete-function --function-name ${NAME}-${fn} 2>/dev/null \
-                && echo "Deleted Lambda: ${NAME}-${fn}" || true
-            done
+          # IAM: step function role
+          aws iam get-role --role-name "${NAME}-step-function-role" > /dev/null 2>&1 && \
+            tofu import aws_iam_role.step_function_role "${NAME}-step-function-role" 2>/dev/null || true
 
-            # Step Function state machine
-            SFN_ARN=$(aws stepfunctions list-state-machines \
-              --query "stateMachines[?name=='${NAME}-ticket-classifier'].stateMachineArn" \
-              --output text 2>/dev/null)
-            if [ -n "$SFN_ARN" ] && [ "$SFN_ARN" != "None" ]; then
-              aws stepfunctions delete-state-machine --state-machine-arn "$SFN_ARN" \
-                && echo "Deleted Step Function: $SFN_ARN" || true
-              sleep 5
-            fi
-
-            # Lambda IAM role: desadjuntar políticas y eliminar
-            aws iam detach-role-policy --role-name ${NAME}-lambda-role \
-              --policy-arn arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole 2>/dev/null || true
-            S3_POLICY_ARN=$(aws iam list-policies --scope Local \
-              --query "Policies[?PolicyName=='${NAME}-s3-access'].Arn" --output text 2>/dev/null)
-            if [ -n "$S3_POLICY_ARN" ] && [ "$S3_POLICY_ARN" != "None" ]; then
-              aws iam detach-role-policy --role-name ${NAME}-lambda-role \
-                --policy-arn "$S3_POLICY_ARN" 2>/dev/null || true
-              aws iam delete-policy --policy-arn "$S3_POLICY_ARN" 2>/dev/null || true
-            fi
-            aws iam delete-role --role-name ${NAME}-lambda-role 2>/dev/null \
-              && echo "Deleted IAM role: ${NAME}-lambda-role" || true
-
-            # Step Function IAM role: eliminar políticas inline y el rol
-            aws iam delete-role-policy --role-name ${NAME}-step-function-role \
-              --policy-name "${NAME}-lambda-invoke" 2>/dev/null || true
-            aws iam delete-role-policy --role-name ${NAME}-step-function-role \
-              --policy-name "${NAME}-logs" 2>/dev/null || true
-            aws iam delete-role --role-name ${NAME}-step-function-role 2>/dev/null \
-              && echo "Deleted IAM role: ${NAME}-step-function-role" || true
-
-            # CloudWatch Log Group
-            aws logs delete-log-group \
-              --log-group-name /aws/stepfunctions/${NAME}-ticket-classifier 2>/dev/null \
-              && echo "Deleted Log Group" || true
-
-            # S3 bucket de tickets (vaciar primero)
-            aws s3 rm s3://${NAME}-tickets --recursive 2>/dev/null || true
-            aws s3 rb s3://${NAME}-tickets --force 2>/dev/null \
-              && echo "Deleted S3 bucket: ${NAME}-tickets" || true
-
-            echo "Cleanup complete."
-          else
-            echo "State file exists (${STATE_SIZE} bytes) — skipping cleanup."
+          # IAM: managed policy for S3
+          S3_POLICY_ARN=$(aws iam list-policies --scope Local \
+            --query "Policies[?PolicyName=='${NAME}-s3-access'].Arn" --output text 2>/dev/null)
+          if [ -n "$S3_POLICY_ARN" ] && [ "$S3_POLICY_ARN" != "None" ]; then
+            tofu import aws_iam_policy.s3_access "${S3_POLICY_ARN}" 2>/dev/null || true
           fi
+
+          # IAM: policy attachments on lambda role
+          aws iam get-role --role-name "${NAME}-lambda-role" > /dev/null 2>&1 && {
+            tofu import aws_iam_role_policy_attachment.lambda_logs \
+              "${NAME}-lambda-role/${BASIC_EXEC}" 2>/dev/null || true
+            if [ -n "$S3_POLICY_ARN" ] && [ "$S3_POLICY_ARN" != "None" ]; then
+              tofu import aws_iam_role_policy_attachment.lambda_s3 \
+                "${NAME}-lambda-role/${S3_POLICY_ARN}" 2>/dev/null || true
+            fi
+          } || true
+
+          # IAM: inline policies on step function role
+          aws iam get-role --role-name "${NAME}-step-function-role" > /dev/null 2>&1 && {
+            aws iam get-role-policy --role-name "${NAME}-step-function-role" \
+              --policy-name "${NAME}-lambda-invoke" > /dev/null 2>&1 && \
+              tofu import aws_iam_role_policy.step_function_lambda_policy \
+                "${NAME}-step-function-role:${NAME}-lambda-invoke" 2>/dev/null || true
+
+            aws iam get-role-policy --role-name "${NAME}-step-function-role" \
+              --policy-name "${NAME}-logs" > /dev/null 2>&1 && \
+              tofu import aws_iam_role_policy.step_function_logs_policy \
+                "${NAME}-step-function-role:${NAME}-logs" 2>/dev/null || true
+          } || true
+
+          # S3: bucket + sub-recursos
+          aws s3api head-bucket --bucket "${NAME}-tickets" > /dev/null 2>&1 && {
+            tofu import aws_s3_bucket.tickets_bucket "${NAME}-tickets" 2>/dev/null || true
+            tofu import aws_s3_bucket_public_access_block.tickets_bucket \
+              "${NAME}-tickets" 2>/dev/null || true
+            tofu import aws_s3_bucket_versioning.tickets_bucket \
+              "${NAME}-tickets" 2>/dev/null || true
+          } || true
+
+          # CloudWatch Log Group
+          LOG_NAME="/aws/stepfunctions/${NAME}-ticket-classifier"
+          aws logs describe-log-groups --log-group-name-prefix "${LOG_NAME}" \
+            --query "logGroups[0].logGroupName" --output text 2>/dev/null | grep -q "${NAME}" && \
+            tofu import aws_cloudwatch_log_group.step_function_logs "${LOG_NAME}" 2>/dev/null || true
+
+          # Lambda functions (dentro de módulos)
+          for fn in validate-ticket classify-ticket route-ticket; do
+            aws lambda get-function --function-name "${NAME}-${fn}" > /dev/null 2>&1 && {
+              MODULE=$(echo "$fn" | tr '-' '_')
+              tofu import "module.${MODULE}.aws_lambda_function.this" \
+                "${NAME}-${fn}" 2>/dev/null || true
+            } || true
+          done
+
+          # Step Function state machine
+          SFN_ARN=$(aws stepfunctions list-state-machines \
+            --query "stateMachines[?name=='${NAME}-ticket-classifier'].stateMachineArn" \
+            --output text 2>/dev/null)
+          if [ -n "$SFN_ARN" ] && [ "$SFN_ARN" != "None" ]; then
+            tofu import aws_sfn_state_machine.ticket_classifier "${SFN_ARN}" 2>/dev/null || true
+          fi
+
+          echo "Import complete."
 
       - name: Terraform Apply
         run: tofu apply -auto-approve
