@@ -58,7 +58,7 @@ def lambda_handler(event, context):
         
         # Agregar destino al evento
         event['s3_destination'] = s3_uri
-        event['routed_at'] = context.request_id
+        event['routed_at'] = context.aws_request_id
         
     except Exception as e:
         error_msg = f"Error al guardar en S3: {str(e)}"
