@@ -54,7 +54,7 @@ module "validate_ticket" {
 
   function_name = "${var.project_name}-${var.student_id}-validate-ticket"
   source_dir    = "${path.module}/lambdas/validate_ticket"
-  role_arn      = aws_iam_role.lambda_execution_role.arn
+  role_arn      = aws_iam_role.lambda_role.arn
   timeout       = 10
 
   environment_variables = {
@@ -69,7 +69,7 @@ module "classify_ticket" {
 
   function_name = "${var.project_name}-${var.student_id}-classify-ticket"
   source_dir    = "${path.module}/lambdas/classify_ticket"
-  role_arn      = aws_iam_role.lambda_execution_role.arn
+  role_arn      = aws_iam_role.lambda_role.arn
   timeout       = 10
 
   environment_variables = {
@@ -84,7 +84,7 @@ module "route_ticket" {
 
   function_name = "${var.project_name}-${var.student_id}-route-ticket"
   source_dir    = "${path.module}/lambdas/route_ticket"
-  role_arn      = aws_iam_role.lambda_execution_role.arn
+  role_arn      = aws_iam_role.lambda_role.arn
   timeout       = 15
 
   environment_variables = {

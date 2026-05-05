@@ -30,7 +30,7 @@ data "aws_iam_policy_document" "s3_access" {
       "s3:PutObject",
       "s3:DeleteObject"
     ]
-    resources = ["${aws_s3_bucket.quarantine.arn}/*"]
+    resources = ["${aws_s3_bucket.tickets_bucket.arn}/*"]
   }
 }
 
