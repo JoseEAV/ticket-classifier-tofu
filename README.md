@@ -542,8 +542,8 @@ Este proyecto demuestra competencias en:
 
 ## 👨‍💻 Autor
 
-**[Tu Nombre]**  
-Matrícula: [Tu Matrícula]  
+Jose Aceves
+Matrícula: 4980353 
 Universidad Autónoma de Guadalajara  
 AWS Academy Data Engineering - Módulo 12
 

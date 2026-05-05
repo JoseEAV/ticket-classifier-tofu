@@ -17,3 +17,8 @@ variable "timeout" {
   type    = number
   default = 10
 }
+variable "environment_variables" {
+  type        = map(string)
+  default     = {}
+  description = "Variables de entorno para la Lambda"
+}

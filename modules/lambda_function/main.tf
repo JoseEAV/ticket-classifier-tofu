@@ -12,4 +12,11 @@ resource "aws_lambda_function" "this" {
   handler          = "lambda_function.lambda_handler"
   runtime          = "python3.12"
   timeout          = var.timeout
+
+  dynamic "environment" {
+    for_each = length(var.environment_variables) > 0 ? [1] : []
+    content {
+      variables = var.environment_variables
+    }
+  }
 }
